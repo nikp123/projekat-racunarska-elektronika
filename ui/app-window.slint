@@ -1,17 +1,223 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import { Button, VerticalBox, TabWidget, ProgressIndicator, Slider } from "std-widgets.slint";
 
 export component AppWindow inherits Window {
-    in-out property <int> counter: 42;
-    callback request-increase-value();
-    VerticalBox {
-        Text {
-            text: "Counter: \{root.counter}";
-        }
+    in-out property <int> steps: 42;
+    in-out property <int> revolutions: 1;
+    in-out property <int>   delay-step: 2;
+    in-out property <float> delay: 3.0;
 
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
+    in-out property <bool>  can-proceed: false;
+    in-out property <bool>  capture-in-progress: false;
+    in-out property <float> capture-progress: 0.5;
+    in-out property <int>   active-tab: 2;
+
+    in property <string>   device-name: "fixme";
+    
+    preferred-width: 400px;
+    preferred-height: 300px;
+
+    callback scan_adb_devices();
+    callback open_camera_app();
+    callback start_capture();
+    callback stop_capture();
+
+    VerticalLayout {
+        tab_bar := HorizontalLayout {
+            padding: 5px;
+            spacing: 5px;
+            Button {
+                text: can-proceed ? "Connected" : "Connecting";
+                enabled: !capture-in-progress;
+                clicked => { root.active-tab = 2; }
+                primary: (root.active-tab == 2);
+            }
+            Button {
+                text: "Settings";
+                enabled: can-proceed && !capture-in-progress;
+                clicked => { root.active-tab = 1; }
+                primary: (root.active-tab == 1);
+            }
+            Button {
+                text: "Capture";
+                enabled: can-proceed && !capture-in-progress;
+                clicked => { root.active-tab = 0; }
+                primary: (root.active-tab == 0);
+            }
+
+        }
+        Rectangle {
+            clip: true;
+            Rectangle {
+                x: root.active-tab == 2 ? 0 : root.active-tab < 2 ? - self.width - 1px : parent.width + 1px;
+                animate x { duration: 125ms; easing: ease; }
+
+                VerticalBox {
+                    alignment: center;
+                    Text {
+                        text: can-proceed ? "Connected to \{device-name}" : "No devices found";
+                    }
+
+                    Button {
+                        text: "Try again";
+                        enabled: !can-proceed;
+                        clicked => { root.scan_adb_devices(); }
+                    }
+                }
+            }
+            Rectangle {
+                x: root.active-tab == 1 ? 0 : root.active-tab < 1 ? - self.width - 1px : parent.width + 1px;
+                animate x { duration: 125ms; easing: ease; }
+
+                VerticalLayout {
+                    padding: 10px;
+                    HorizontalLayout {
+                        alignment: stretch;
+                        height: 30px;
+                        padding: 5px;
+
+                        Text {
+                            text: "Steps per revolution: \{root.steps}";
+                            horizontal-stretch: 2;
+                        }
+
+                        Button {
+                            text: "Decrease";
+                            clicked => {
+                                if root.steps > 1 {
+                                    root.steps -= 1;
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: "Increase";
+                            clicked => {
+                                if root.steps < 100 {
+                                    root.steps += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: stretch;
+                        height: 30px;
+                        padding: 5px;
+
+                        Text {
+                            text: "Number of revolutions: \{root.revolutions}";
+                            horizontal-stretch: 2;
+                        }
+
+                        Button {
+                            text: "Decrease";
+                            clicked => {
+                                if root.revolutions > 1 {
+                                    root.revolutions -= 1;
+                                }
+                            }
+                        }
+
+                        Button {
+                            text: "Increase";
+                            clicked => {
+                                if root.revolutions < 10 {
+                                    root.revolutions += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: stretch;
+                        height: 30px;
+                        padding: 5px;
+
+                        Text {
+                            text: "Delay between pictures: \{root.delay} s";
+                            //horizontal-stretch: 2;
+                        }
+                        Slider {
+                            width: 50%;
+                            height: 20px;
+                            minimum: 0.5;
+                            value: 3.0;
+                            maximum: 10.0;
+                            orientation: horizontal;
+                            step: 0.1;
+                            changed(value) => {
+                                root.delay = round(value*10)/10;
+                            }
+                        }
+                    }
+
+                    HorizontalLayout {
+                        alignment: stretch;
+                        height: 30px;
+                        padding: 5px;
+
+                        Text {
+                            text: "Motor step delay: \{root.delay_step} ms";
+                            //horizontal-stretch: 2;
+                        }
+                        Slider {
+                            width: 50%;
+                            height: 20px;
+                            minimum: 1;
+                            value: 2;
+                            maximum: 50;
+                            orientation: horizontal;
+                            step: 1;
+                            changed(value) => {
+                                root.delay-step = round(value);
+                            }
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                x: root.active-tab == 0 ? 0 : root.active-tab < 0 ? - self.width - 1px : parent.width + 1px;
+                animate x { duration: 125ms; easing: ease; }
+
+                VerticalBox {
+                    alignment: center;
+                    Text {
+                        text: "Keep your phone unlocked. Then open the camera app.";
+                        wrap: word-wrap;
+                        width: 80%;
+                    }
+
+                    Button {
+                        text: "Open camera app";
+                        clicked => { open_camera_app(); }
+                        enabled: !capture-in-progress;
+                    }
+
+                    Text {
+                        text: "Once you've centered the object and made it in focus, you can start the capture.";
+                        wrap: word-wrap;
+                        width: 80%;
+                    }
+
+                    Button {
+                        text: capture-in-progress ? "Stop capture" : "Start capture";
+                        clicked => {
+                            if capture-in-progress {
+                                stop_capture();
+                            } else {
+                                start_capture();
+                            }
+                            capture-in-progress = !capture-in-progress;
+                        }
+                    }
+
+                    ProgressIndicator {
+                        width: 90%;
+                        height: 15px;
+                        progress: capture-progress;
+                        visible: capture-in-progress;
+                    }
+                }
             }
         }
     }

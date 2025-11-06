@@ -1,0 +1,15 @@
+import { StandardButton, VerticalBox } from "std-widgets.slint";
+
+export component ErrorDialog inherits Dialog {
+    title: "Error";
+    
+    in property <string> error_text: "Test error";
+    min-width: 300px;
+
+    Text {
+        text: error_text;
+    }
+    StandardButton {
+        kind: close;
+    }    
+}
