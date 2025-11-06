@@ -16,12 +16,7 @@ use adb_client::{ADBDeviceExt, ADBServer, ADBServerDevice};
 
 slint::include_modules!();
 
-
-struct AppState {
-    gpio_output: Lines<Output>,
-}
-
-fn startup() -> Result<AppState, String> {
+fn startup() -> Result<Lines<Output>, String> {
     // assume gpiochip0 because I cant be bothered to do even more UI for this
     let chip = match Chip::new(0) {
         Ok(chip) => chip,
@@ -37,9 +32,7 @@ fn startup() -> Result<AppState, String> {
         Err(_) => return Err("Unable to configure outputs. Are you **not** on a Pi?".to_string())
     };
 
-    Ok(AppState {
-        gpio_output: output
-    })
+    Ok(output)
 }
 
 fn scan_adb_devices(ui: &AppWindow) -> Option<ADBServerDevice> {
@@ -86,8 +79,8 @@ fn open_camera_app(device: &mut Option<ADBServerDevice>) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    match startup() {
-        Ok(_) => {},
+    let gpio = match startup() {
+        Ok(d) => Arc::new(Mutex::new(d)),
         Err(e) => {
             let ui = ErrorDialog::new()?;
 
@@ -140,6 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let device = Arc::clone(&device);
         let flag = Arc::clone(&stop_flag);
+        let gpio = Arc::clone(&gpio);
 
         ui.on_start_capture(move || {
             flag.store(false, Ordering::Relaxed);
@@ -155,6 +149,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let ui_handle_clone = ui_handle.clone();
             let flag_clone = flag.clone();
             let device_clone = device.clone();
+            let gpio_clone = gpio.clone();
 
             // Your thread handle, in case you need to kill or join it
             let _ = thread::spawn(move || {
@@ -163,6 +158,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                     println!("Started rotation thread with {} steps and {} step_size",
                         steps, step_size);
                 }
+
+                // Stepper motor driving pattern so that
+                // the coils get powered on in order
+                let motor_pattern: [[bool; 4]; 8] = [
+                    [true,false,false,true],
+                    [true,false,false,false],
+                    [true,true,false,false],
+                    [false,true,false,false],
+                    [false,true,true,false],
+                    [false,false,true,false],
+                    [false,false,true,true],
+                    [false,false,false,true]];
 
                 for i in 0..steps {
                     if flag_clone.load(Ordering::Relaxed) {
@@ -177,9 +184,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                             &mut nowhere);
                     } 
 
-                    let wait_between_camera = (camera_delay * 1000.0) as u64;
+                    // drive motors
+                    let counter = i as f64;
+                    let begin_step = (step_size * counter).round() as usize;
+                    let end_step = (step_size * counter).round() as usize;
+                    for j in begin_step..end_step {
+                        // Move the motor by a step
+                        gpio_clone.lock().unwrap().set_values(motor_pattern[j%8]).unwrap();
+                        // Wait for the motor to settle in position
+                        thread::sleep(Duration::from_millis(step_delay as u64));
+                    }
+                    
+                    let mut wait_between_camera = (camera_delay * 1000.0) as i32;
+                    wait_between_camera -= step_delay * ((end_step-begin_step) as i32);
 
-                    thread::sleep(Duration::from_millis(wait_between_camera));
+                    // sometimes the motor may be holding up the camera
+                    if wait_between_camera > 0 {
+                        thread::sleep(Duration::from_millis(wait_between_camera as u64));
+                    }
 
                     let ui_handle_clone_clone = ui_handle_clone.clone();
 
