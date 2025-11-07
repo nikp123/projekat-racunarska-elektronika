@@ -1,2 +1,0 @@
-[target.arm-unknown-linux-gnueabi]
-dockerfile = "./docker/armv6-dockerfile"

@@ -18,21 +18,23 @@
       {
         devShells.default = with pkgs; mkShell {
           buildInputs = [
+            android-tools
+            libgpiod
             openssl
             pkg-config
-            scrcpy
             rust-bin.beta.latest.default
             rustup
           ];
 
           LD_LIBRARY_PATH = "$LD_LIBRARY_PATH:${ with pkgs; lib.makeLibraryPath [
-              wayland
-              libxkbcommon
               fontconfig
+              libGL
+              libgpiod
+              libxkbcommon
+              wayland
               xorg.libX11
               xorg.libXcursor
               xorg.libXi
-              libGL
           ]}";
         };
       }

@@ -10,27 +10,31 @@ use std::sync::{
 };
 use std::thread;
 use std::time::Duration;
-use gpiod::{Chip, Lines, Options, Output};
 
 use adb_client::{ADBDeviceExt, ADBServer, ADBServerDevice};
 
 slint::include_modules!();
 
-fn startup() -> Result<Lines<Output>, String> {
-    // assume gpiochip0 because I cant be bothered to do even more UI for this
-    let chip = match Chip::new(0) {
-        Ok(chip) => chip,
-        Err(_) => return Err("Unable to use gpiochip0! Do you have the right permissions?".to_string())
+use core::ffi::{c_int, c_void};
+
+extern "C" {
+    fn setup_gpio() -> *mut c_void;
+    fn set_position_gpio(gpio: *mut c_void, position: c_int);
+}
+
+struct SafePtr(*mut c_void);
+
+unsafe impl Send for SafePtr {}
+unsafe impl Sync for SafePtr {}
+
+fn startup() -> Result<*mut c_void, String> {
+    let output = unsafe {
+        setup_gpio()
     };
 
-    let opts = Options::output([27, 22, 23, 24])
-        .values([false, false, false, false])
-        .consumer("rotating-table");
-
-    let output = match chip.request_lines(opts) {
-        Ok(output) => output,
-        Err(_) => return Err("Unable to configure outputs. Are you **not** on a Pi?".to_string())
-    };
+    if output.is_null() {
+        return Err(String::from("Setup GPIO failed. Check if your permissions are correct"));
+    }
 
     Ok(output)
 }
@@ -72,7 +76,7 @@ fn open_camera_app(device: &mut Option<ADBServerDevice>) {
 
    if let Some(device) = device.as_mut() {
         let _ = device.shell_command(
-            &["am", "start", "-a", "android.media.action.IMAGE_CAPTURE"],
+            &["monkey", "-p", "org.lineageos.snap", "-c", "android.intent.category.LAUNCHER", "1"],
             &mut nowhere);
     } 
     // The UI should be blocking you from being here
@@ -80,7 +84,7 @@ fn open_camera_app(device: &mut Option<ADBServerDevice>) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let gpio = match startup() {
-        Ok(d) => Arc::new(Mutex::new(d)),
+        Ok(d) => Arc::new(Mutex::new(SafePtr(d))),
         Err(e) => {
             let ui = ErrorDialog::new()?;
 
@@ -159,18 +163,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                         steps, step_size);
                 }
 
-                // Stepper motor driving pattern so that
-                // the coils get powered on in order
-                let motor_pattern: [[bool; 4]; 8] = [
-                    [true,false,false,true],
-                    [true,false,false,false],
-                    [true,true,false,false],
-                    [false,true,false,false],
-                    [false,true,true,false],
-                    [false,false,true,false],
-                    [false,false,true,true],
-                    [false,false,false,true]];
-
                 for i in 0..steps {
                     if flag_clone.load(Ordering::Relaxed) {
                         break;
@@ -190,7 +182,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let end_step = (step_size * counter).round() as usize;
                     for j in begin_step..end_step {
                         // Move the motor by a step
-                        gpio_clone.lock().unwrap().set_values(motor_pattern[j%8]).unwrap();
+                        unsafe {
+                            set_position_gpio(gpio_clone.lock().unwrap().0, j as i32);
+                        }
                         // Wait for the motor to settle in position
                         thread::sleep(Duration::from_millis(step_delay as u64));
                     }
