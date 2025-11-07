@@ -84,7 +84,10 @@ void set_position_gpio(struct gpiod_line_request *gpio, int position) {
 		{ GPIOD_LINE_VALUE_ACTIVE, GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_INACTIVE, GPIOD_LINE_VALUE_ACTIVE }
 	}; 
 
-	gpiod_line_request_set_values(gpio, values[position%8]);
+	int ret = gpiod_line_request_set_values(gpio, values[position%8]);
+	if(ret) {
+		perror("Failed to set GPIO value.");
+	}
 }
 
 #ifndef RUST

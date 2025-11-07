@@ -168,18 +168,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                         break;
                     }
 
-                    let mut nowhere = io::sink();
-
-                    if let Some(device) = device_clone.lock().unwrap().as_mut() {
-                        let _ = device.shell_command(
-                            &["input", "keyevent", "KEYCODE_CAMERA"],
-                            &mut nowhere);
-                    } 
-
                     // drive motors
                     let counter = i as f64;
                     let begin_step = (step_size * counter).round() as usize;
-                    let end_step = (step_size * counter).round() as usize;
+                    let end_step = (step_size * (counter+1.0)).round() as usize;
                     for j in begin_step..end_step {
                         // Move the motor by a step
                         unsafe {
@@ -188,6 +180,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                         // Wait for the motor to settle in position
                         thread::sleep(Duration::from_millis(step_delay as u64));
                     }
+
+                    let mut nowhere = io::sink();
+                    if let Some(device) = device_clone.lock().unwrap().as_mut() {
+                        let _ = device.shell_command(
+                            &["input", "keyevent", "KEYCODE_CAMERA"],
+                            &mut nowhere);
+                    } 
                     
                     let mut wait_between_camera = (camera_delay * 1000.0) as i32;
                     wait_between_camera -= step_delay * ((end_step-begin_step) as i32);
